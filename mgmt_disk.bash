@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# Fonction de parsing des ID (VM ou disques)
+# === Fonction de parsing des ID (VM ou disques) ===
 parse_ids() {
   input=$1
   result=""
@@ -21,7 +21,9 @@ parse_ids() {
   echo $result
 }
 
-# Choix de l'action
+current_host=$(hostname)
+
+# === Choix de l'action ===
 echo "Que voulez-vous faire ?"
 echo "1) Ajouter un disque"
 echo "2) Supprimer un disque"
@@ -66,8 +68,18 @@ if [ "$action" -eq 1 ]; then
   for vmid in $vm_list; do
     for diskid in $disk_list; do
       current_size=${size_map[$diskid]}
-      echo "Ajout de scsi$diskid à la VM $vmid : ${current_size}G sur $storage"
-      qm set "$vmid" --scsi$diskid "${storage}:${current_size},discard=on,ssd=1"
+      cmd="--scsi$diskid ${storage}:${current_size},discard=on,ssd=1"
+      target_host="pve${vmid: -1}"
+
+      if [[ "$target_host" == "$current_host" ]]; then
+        qm status "$vmid" &>/dev/null || continue
+        echo "[LOCAL] Ajout de scsi$diskid à VM $vmid sur $storage (${current_size}G)"
+        qm set "$vmid" $cmd
+      else
+        ssh -o StrictHostKeyChecking=accept-new "$target_host" "qm status $vmid &>/dev/null" || continue
+        echo "[DISTANT] Ajout de scsi$diskid à VM $vmid via $target_host"
+        ssh -o StrictHostKeyChecking=accept-new "$target_host" "qm set $vmid $cmd"
+      fi
     done
   done
 
@@ -81,10 +93,18 @@ elif [ "$action" -eq 2 ]; then
 
   for vmid in $vm_list; do
     for diskid in $disk_list; do
-      echo "Suppression de scsi$diskid sur VM $vmid"
-      qm set "$vmid" -delete "scsi$diskid" -force 1
+      cmd="-delete scsi$diskid -force 1"
+      target_host="pve${vmid: -1}"
+
+      if [[ "$target_host" == "$current_host" ]]; then
+        qm status "$vmid" &>/dev/null || continue
+        echo "[LOCAL] Suppression de scsi$diskid sur VM $vmid"
+        qm set "$vmid" $cmd
+      else
+        ssh -o StrictHostKeyChecking=accept-new "$target_host" "qm status $vmid &>/dev/null" || continue
+        echo "[DISTANT] Suppression de scsi$diskid sur VM $vmid via $target_host"
+        ssh -o StrictHostKeyChecking=accept-new "$target_host" "qm set $vmid $cmd"
+      fi
     done
   done
 fi
-
-
