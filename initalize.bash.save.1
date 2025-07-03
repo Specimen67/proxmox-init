@@ -1,0 +1,206 @@
+#!/bin/bash
+
+# Création du cluster
+pvecm create Dawan
+
+# Lecture de la plage des nœuds
+read -p "Plage des nœuds à ajouter (par défaut: 2-8) [2-8] : " node_range
+node_range=${node_range:-2-8}
+
+if [[ ! "$node_range" =~ ^([0-9]+)-([0-9]+)$ ]]; then
+  echo "Format invalide, utilisez par exemple : 2-8"
+  exit 1
+fi
+
+start=${BASH_REMATCH[1]}
+end=${BASH_REMATCH[2]}
+
+SRC_DIR="./sources.list.d"
+DEST_DIR="/etc/apt/sources.list.d/"
+
+# 1. Copier les sources.list.d sur le noeud local
+echo "Copie du dossier $SRC_DIR vers $DEST_DIR"
+sudo cp -r "$SRC_DIR"/* "$DEST_DIR"
+
+# 2. Installer expect sur le noeud local
+echo "Installation de 'expect' sur le noeud"
+sudo apt update
+sudo apt install -y expect
+
+# 3. Ajouter les nœuds au cluster via expect
+for i in $(seq "$start" "$end"); do
+  ip="192.168.67.20$i"
+  echo "Ajout du nœud pve$ip"
+  ./join_node.expect "$ip"
+done
+
+# 4. Modifier les fichiers hosts du cluster
+bash ajout_hosts.bash "1-$end"
+
+# 5. Copier les sources.list.d sur les nœuds distants
+for i in $(seq "$start" "$end"); do
+  host="pve$i"
+  echo "Copie des sources.list.d vers $host"
+  scp -r "$SRC_DIR"/* root@"$host":"$DEST_DIR"
+done
+
+# 6. Lancer la mise à jour des nœuds distants en arrière-plan
+for i in $(seq "$start" "$end"); do
+  host="pve$i"
+  echo "Lancement de la mise à jour sur $host en arrière-plan"
+  ssh root@"$host" "nohup bash -c 'apt update && apt upgrade -y > /var/log/maj.log 2>&1' >/dev/null 2>&1 &"
+done
+
+# 7. Mise à jour locale en premier plan (blocante)
+echo "Mise à jour locale..."
+if sudo apt update && sudo apt upgrade -y; then
+  echo "Mise à jour locale terminée avec succès."
+else
+  echo "Erreur lors de la mise à jour locale."
+  exit 1
+fi
+
+# 8. Suppression bannière sur le nœud local (pve1)
+sed -i.bak "s/.data.status.toLowerCase() !== 'active') {/.data.status.toLowerCase() !== 'active') { orig_cmd(); } else if ( false ) {/" /usr/share/javascript/proxmox-widget-toolkit/proxmoxlib.js
+systemctl restart pveproxy.service
+
+if [ $? -eq 0 ]; then
+  echo "✔ Commandes exécutées avec succès sur pve1 (local)"
+else
+  echo "✘ Erreur lors de l'exécution locale sur pve1"
+fi
+
+# Suppression bannière sur les autres nœuds (pve2 à pveN)
+for i in $("$start" "$end"); do
+  host="pve$i"
+  echo "Exécution suppression bannière sur $host..."
+
+  ssh root@"$host" bash -s <<'EOF'
+sed -i.bak "s/.data.status.toLowerCase() !== 'active') {/.data.status.toLowerCase() !== 'active') { orig_cmd(); } else if ( false ) {/" /usr/share/javascript/proxmox-widget-toolkit/proxmoxlib.js
+systemctl restart pveproxy.service
+EOF
+
+  if [ $? -eq 0 ]; then
+    echo "✔ Commandes exécutées avec succès sur $host"
+  else
+    echo "✘ Erreur lors de l'exécution distante sur $host"
+  fi
+done
+
+# 9. Création des bridges
+local_host=$(hostname)
+
+bridge_config=$(cat <<EOF
+auto vmbr1
+iface vmbr1 inet manual
+    bridge-ports enp3s0
+    bridge-stp off
+    bridge-fd 0
+    bridge-vlan-aware yes
+    bridge-vids 2-4094
+    mtu 9000
+EOF
+)
+
+# Sur local
+echo "Configuration du bridge vmbr1 sur $local_host"
+if ! grep -q "^auto vmbr1" /etc/network/interfaces; then
+  echo -e "\n$bridge_config" | sudo tee -a /etc/network/interfaces > /dev/null
+fi
+sudo ifup vmbr1 || echo "⚠️ Impossible de monter vmbr1 sur $local_host"
+
+# Sur les autres nœuds
+for i in $("$start" "$end"); do
+  host="pve$i"
+  echo "Configuration du bridge vmbr1 sur $host "
+
+  ssh root@"$host" bash -c "' 
+    if ! grep -q \"^auto vmbr1\" /etc/network/interfaces; then
+      echo -e \"\n$bridge_config\" | tee -a /etc/network/interfaces > /dev/null
+    fi
+    ifup vmbr1 || echo \"⚠️  Impossible de monter vmbr1 sur $host\"
+  '"
+done
+
+
+# Création d'une zone VLAN
+zone_name="VLAN"
+bridge_name="vmbr1"
+mtu_val=9000
+
+echo "Création de la zone SDN $zone_name"
+
+cat <<EOF >> /etc/pve/sdn/zones.cfg
+
+vlan: $zone_name
+    bridge $bridge_name
+    ipam pve
+    mtu $mtu_val
+EOF
+
+echo "Zone SDN ajoutée dans /etc/pve/sdn/zones.cfg"
+
+# Création des vnets :
+
+vnets_cfg="/etc/pve/sdn/vnets.cfg"
+interfaces_cfg_local="/etc/network/interfaces.d/sdn"
+
+local_host=$(hostname)
+
+# Vider les fichiers avant écriture
+> "$vnets_cfg"
+> "$interfaces_cfg_local"
+
+add_vnet() {
+  local vnet_name=$1
+  local tag=$2
+
+  cat >> "$vnets_cfg" <<EOF
+vnet: $vnet_name
+    zone $zone_name
+    tag $tag
+    vlanaware 1
+
+EOF
+
+  cat >> "$interfaces_cfg_local" <<EOF
+auto $vnet_name
+iface $vnet_name
+    bridge_ports $bridge.$tag
+    bridge_stp off
+    bridge_fd 0
+    bridge-vlan-aware yes
+    bridge-vids 2-4094
+    mtu $mtu
+
+EOF
+}
+
+# Création des vnets dans la plage
+for i in $(seq "$start" "$end"); do
+  vnet_name="v${i}00"
+  tag="${i}00"
+  add_vnet "$vnet_name" "$tag"
+done
+
+# Ajout des vnets spécifiques
+for vnet in v120 v340 v560 v780; do
+  tag=${vnet:1}
+  add_vnet "$vnet" "$tag"
+done
+
+echo "Fichiers vnets et interfaces.d/sdn générés localement."
+
+# Synchroniser le fichier interfaces.d/sdn sur les nœuds distants
+for i in $(seq "$start" "$end"); do
+  host="pve$i"
+  if [[ "$host" == "$local_host" ]]; then
+    echo " - $host (local) : pas de copie nécessaire"
+  else
+    echo "Copie du fichier interfaces.d/sdn vers $host"
+    scp "$interfaces_cfg_local" root@"$host":"$interfaces_cfg_local"
+  fi
+done
+
+echo "Configuration des vnets terminée."
+

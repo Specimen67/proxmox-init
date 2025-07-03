@@ -4,7 +4,7 @@
 pvecm create Dawan
 
 # Lecture de la plage des nœuds
-read -p "Plage des nœuds à ajouter (par défaut: 2-8) [2-8] : " node_range
+read -p "Plage des nœuds à ajouter (par défaut: 1-8) [1-8] : " node_range
 node_range=${node_range:-1-8}
 
 if [[ ! "$node_range" =~ ^([0-9]+)-([0-9]+)$ ]]; then
@@ -16,12 +16,6 @@ start=${BASH_REMATCH[1]}
 end=${BASH_REMATCH[2]}
 
 # Ajout des nœuds au cluster via expect
-SRC_DIR="./sources.list.d"
-DEST_DIR="/etc/apt/sources.list.d/"
-sudo cp -r "$SRC_DIR"/* "$DEST_DIR"
-
-apt update && apt install expect
-
 for i in $(seq "$start" "$end"); do
   ip="192.168.67.2$i"
   echo "Ajout du nœud $ip"
@@ -32,6 +26,12 @@ done
 bash ajout_hosts.bash "$node_range"
 
 # Copie des sources.list.d localement et sur les nœuds distants
+SRC_DIR="./sources.list.d"
+DEST_DIR="/etc/apt/sources.list.d/"
+
+echo "Copie locale du dossier $SRC_DIR vers $DEST_DIR"
+sudo cp -r "$SRC_DIR"/* "$DEST_DIR"
+
 for i in $(seq "$start" "$end"); do
   host="pve$i"
   echo "Copie vers $host"
@@ -46,7 +46,7 @@ for i in $(seq "$start" "$end"); do
 done
 
 # Mise à jour locale (attente)
-echo "Mise à jour..."
+echo "Mise à jour locale..."
 if sudo apt update && sudo apt upgrade -y; then
   echo "Mise à jour terminée avec succès."
 else
@@ -86,8 +86,7 @@ EOF
   fi
 done
 
-
-# Création des bridge
+# Création des bridge sur les noeuds
 for i in $(seq "$start" "$end"); do
   host="pve$i"
   echo "Configuration du bridge vmbr1 sur $host"
@@ -106,7 +105,6 @@ EOF
 
   if [[ "$host" == "$local_host" ]]; then
     # Exécution locale
-    # On ajoute la config seulement si pas déjà présente
     if ! grep -q "^auto vmbr1" /etc/network/interfaces; then
       echo -e "\n$bridge_config" | sudo tee -a /etc/network/interfaces > /dev/null
     fi
@@ -134,6 +132,7 @@ vlan: $zone_name
     ipam pve
     mtu $mtu_val
 EOF
+pvesh set /cluster/sdn
 
 # Création des Vnets
 vnets_cfg="/etc/pve/sdn/vnets.cfg"
@@ -141,17 +140,14 @@ interfaces_cfg_local="/etc/network/interfaces.d/sdn"
 
 local_host=$(hostname)
 
-# Génération complète du fichier vnets.cfg (cluster-wide)
+# Vider les fichiers avant écriture
 > "$vnets_cfg"
-
-# Génération complète du fichier interfaces.d/sdn localement
 > "$interfaces_cfg_local"
 
 add_vnet() {
   local vnet_name=$1
   local tag=$2
 
-  # Ajout au fichier vnets.cfg (cluster-wide)
   cat >> "$vnets_cfg" <<EOF
 vnet: $vnet_name
     zone $zone_name
@@ -160,7 +156,6 @@ vnet: $vnet_name
 
 EOF
 
-  # Ajout au fichier interfaces.d/sdn local
   cat >> "$interfaces_cfg_local" <<EOF
 auto $vnet_name
 iface $vnet_name
@@ -174,33 +169,49 @@ iface $vnet_name
 EOF
 }
 
-# Création des vnets selon la plage
+# Création des vnets dans la plage
 for i in $(seq "$start" "$end"); do
   vnet_name="v${i}00"
   tag="${i}00"
   add_vnet "$vnet_name" "$tag"
 done
 
-# Ajout des 4 vnets spécifiques
+# Ajout des vnets spécifiques
 for vnet in v120 v340 v560 v780; do
   tag=${vnet:1}
   add_vnet "$vnet" "$tag"
 done
 
-echo "Fichiers générés localement :"
-echo " - $vnets_cfg"
-echo " - $interfaces_cfg_local"
 
-# Synchronisation du fichier interfaces.d/sdn vers les nœuds distants
+# Synchroniser le fichier interfaces.d/sdn sur les nœuds distants
 for i in $(seq "$start" "$end"); do
   host="pve$i"
-  echo "Synchronisation vers $host"
-
   if [[ "$host" == "$local_host" ]]; then
     echo " - $host (local) : pas de copie nécessaire"
   else
+    echo "Copie du fichier interfaces.d/sdn vers $host"
     scp "$interfaces_cfg_local" root@"$host":"$interfaces_cfg_local"
   fi
 done
 
-echo "Fin de la configuration des vnets."
+echo "Configuration des vnets terminée."
+
+
+# creation du vg stockage-vm
+# Exécution locale (supposons local_host = pve1)
+echo "Exécution locale sur $local_host"
+bash ./disks.bash
+
+# Exécution distante sur les autres nœuds
+for i in $(seq "$start" "$end"); do
+  host="pve$i"
+  if [[ "$host" == "$local_host" ]]; then
+    echo "Skipping local host $host (already done)"
+    continue
+  fi
+  echo "Exécution sur $host via SSH"
+  scp ./disks.bash root@"$host":/root/
+  ssh root@"$host" bash /root/disks.bash
+done
+
+
