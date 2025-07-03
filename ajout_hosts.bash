@@ -2,7 +2,11 @@
 
 current_host=$(hostname)
 
-read -p "Plage de nœuds à enregistrer dans /etc/hosts (ex: 1-8) : " host_range
+if [ -n "$1" ]; then
+  host_range="$1"
+else
+  read -p "Plage de nœuds à enregistrer dans /etc/hosts (ex: 1-8) : " host_range
+fi
 
 # Vérification et extraction de la plage
 if [[ "$host_range" =~ ^([0-9]+)-([0-9]+)$ ]]; then
