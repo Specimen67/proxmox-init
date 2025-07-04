@@ -135,6 +135,7 @@ vlan: $zone_name
     mtu $mtu_val
 EOF
 pvesh set /cluster/sdn
+sleep 15
 
 step "Création des Vnets"
 vnets_cfg="/etc/pve/sdn/vnets.cfg"
