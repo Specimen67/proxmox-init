@@ -36,6 +36,7 @@ echo "Création d'une nouvelle partition LVM sur $disk_os avec fdisk..."
 
 sleep 2  # attendre que partition apparaisse
 
+wipefs -a /dev/$disk_data
 # Trouver la partition créée (numéro max)
 partition_lvm=4
 echo "Partition LVM créée : $partition_lvm"
