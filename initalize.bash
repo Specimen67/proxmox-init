@@ -106,7 +106,7 @@ iface vmbr1 inet manual
 EOF
   )
 
-if ! grep -q \"^auto vmbr1\" /etc/network/interfaces; then
+if ! grep -q "^auto vmbr1" /etc/network/interfaces; then
   sudo sed -i '/^iface enp3s0 inet manual/a\        mtu 9000' /etc/network/interfaces
   echo -e "\n$bridge_config" | sudo tee -a /etc/network/interfaces > /dev/null
 fi
