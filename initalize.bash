@@ -30,16 +30,26 @@ fi
 node_range="$start-$end"
 echo "Plage de nœuds détectée : $node_range"
 
+step "Copie des sources.list.d"
+
 SRC_DIR="./sources.list.d"
 DEST_DIR="/etc/apt/sources.list.d/"
 
 echo "Copie du dossier $SRC_DIR vers $DEST_DIR"
 cp -r "$SRC_DIR"/* "$DEST_DIR"
 
+
+apt update && apt install sshpass
+for i in $(seq "$start" "$end"); do
+  host="192.168.67.20$i"
+  echo "Copie vers $host"
+  sshpass -p 'proxmoxx' scp -r "$SRC_DIR"/* root@"$host":"$DEST_DIR"
+done
+
 step "Création du cluster"
 pvecm create Dawan
 
-apt update && apt install sshpass
+
 step "Ajout des nœuds au cluster"
 for i in $(seq "$start" "$end"); do
   ip="192.168.67.20$i"
@@ -50,14 +60,7 @@ done
 step "Modification des fichiers hosts des PVE du cluster"
 bash ajout_hosts.bash "1-$end"
 
-#step "Copie des sources.list.d"
 
-
-for i in $(seq "$start" "$end"); do
-  host="pve$i"
-  echo "Copie vers $host"
-  scp -r "$SRC_DIR"/* root@"$host":"$DEST_DIR"
-done
 
 echo 'Acquire::http { Proxy "http://192.168.67.181:3142"; }' > /etc/apt/apt.conf.d/99cache-proxy
 for i in $(seq $start $end); do
