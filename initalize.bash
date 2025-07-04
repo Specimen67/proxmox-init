@@ -36,7 +36,7 @@ pvecm create Dawan
 
 step "Ajout des nœuds au cluster via expect"
 for i in $(seq "$start" "$end"); do
-  ip="192.168.67.2$i"
+  ip="192.168.67.20$i"
   echo "Ajout du nœud $ip"
   ./join_nodes.expect "$ip"
 done
