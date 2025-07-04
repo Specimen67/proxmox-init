@@ -38,7 +38,7 @@ echo "StrictHostKeyChecking accept-new" >> /root/.ssh/config
 
 # Installer sshpass si besoin
 if ! command -v sshpass >/dev/null; then
-  apt install -y sshpass
+  apt update && apt install -y sshpass
 fi
 
 # Ajouter la clé du nœud au master
