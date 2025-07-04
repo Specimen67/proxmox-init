@@ -106,16 +106,18 @@ iface vmbr1 inet manual
 EOF
   )
 
-if ! grep -q "^auto vmbr1" /etc/network/interfaces; then
+if ! grep -q \"^auto vmbr1\" /etc/network/interfaces; then
+  sudo sed -i '/^iface enp3s0 inet manual/a\        mtu 9000' /etc/network/interfaces
   echo -e "\n$bridge_config" | sudo tee -a /etc/network/interfaces > /dev/null
 fi
-sudo ifup vmbr1 || echo "⚠️ Impossible de monter vmbr1 sur $host"
+sudo ifup vmbr1 || echo "⚠️ Impossible de monter vmbr1 sur pve1"
 
 for i in $(seq "$start" "$end"); do
   host="pve$i"
   echo "Configuration du bridge vmbr1 sur $host"
   ssh root@"$host" bash -c "'
     if ! grep -q \"^auto vmbr1\" /etc/network/interfaces; then
+      sudo sed -i '/^iface enp3s0 inet manual/a\        mtu 9000' /etc/network/interfaces
       echo -e \"\n$bridge_config\" | tee -a /etc/network/interfaces > /dev/null
     fi
     ifup vmbr1 || echo \"⚠️ Impossible de monter vmbr1 sur $host\"
