@@ -15,28 +15,28 @@ set timeout -1
 spawn ssh root@$node_to_add
 
 expect {
-    "(yes/no)?" {
-        send "yes\r"
-        exp_continue
-    }
-    "password:" {
-        send "$root_pass\r"
-    }
+  "(yes/no)?" {
+    send "yes\r"
+    exp_continue
+  }
+  "password:" {
+    send "$root_pass\r"
+  }
 }
 
 expect "#"
 
-# Lancement de la commande pvecm add
-send "pvecm add $master_ip --use_ssh 1\r"
+# Lancement de la commande pvecm add sur le noeud distant
+send "pvecm add $master_ip\r"
 
 expect {
-    -re "password.*:" {
-        send "$root_pass\r"
-        exp_continue
-    }
-    "Are you sure you want to continue connecting (yes/no)?" {
-        send "yes\r"
-        exp_continue
-    }
-    eof
+  -re "Please enter superuser.*password.*:" {
+    send "$root_pass\r"
+    exp_continue
+  }
+  "Are you sure you want to continue connecting (yes/no)?" {
+    send "yes\r"
+    exp_continue
+  }
+  eof
 }
