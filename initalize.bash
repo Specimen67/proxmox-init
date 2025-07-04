@@ -81,7 +81,7 @@ fi
 
 step "Suppression de la bannière no-subscription sur tous les nœuds"
 
-sed -i.bak "s/.data.status.toLowerCase() !== 'active') {/.data.status.toLowerCase() !== 'active') { orig_cmd(); } else if ( false ) {/" /u>
+sed -i.bak "s/.data.status.toLowerCase() !== 'active') {/.data.status.toLowerCase() !== 'active') { orig_cmd(); } else if ( false ) {/" /usr/share/javascript/proxmox-widget-toolkit/proxmoxlib.js
 systemctl restart pveproxy.service
 
 for i in $(seq "$start" "$end"); do
