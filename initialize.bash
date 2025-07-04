@@ -13,7 +13,7 @@ step() {
 start=2
 end=1
 
-for i in {2..3}; do
+for i in {2..8}; do
   ip="192.168.67.20$i"
   if ping -c 1 -W 1 "$ip" > /dev/null 2>&1; then
     echo "Nœud détecté : $ip"
