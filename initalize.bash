@@ -107,17 +107,17 @@ EOF
   )
 
 if ! grep -q "^auto vmbr1" /etc/network/interfaces; then
-  sudo sed -i '/^iface enp3s0 inet manual/a\        mtu 9000' /etc/network/interfaces
-  echo -e "\n$bridge_config" | sudo tee -a /etc/network/interfaces > /dev/null
+  sed -i '/^iface enp3s0 inet manual/a\        mtu 9000' /etc/network/interfaces
+  echo -e "\n$bridge_config" | tee -a /etc/network/interfaces > /dev/null
 fi
-sudo ifup vmbr1 || echo "⚠️ Impossible de monter vmbr1 sur pve1"
+ifup vmbr1 || echo "⚠️ Impossible de monter vmbr1 sur pve1"
 
 for i in $(seq "$start" "$end"); do
   host="pve$i"
   echo "Configuration du bridge vmbr1 sur $host"
   ssh root@"$host" bash -c "'
     if ! grep -q \"^auto vmbr1\" /etc/network/interfaces; then
-      sudo sed -i '/^iface enp3s0 inet manual/a\        mtu 9000' /etc/network/interfaces
+      sed -i '/^iface enp3s0 inet manual/a\        mtu 9000' /etc/network/interfaces
       echo -e \"\n$bridge_config\" | tee -a /etc/network/interfaces > /dev/null
     fi
     ifup vmbr1 || echo \"⚠️ Impossible de monter vmbr1 sur $host\"
@@ -216,30 +216,7 @@ step "Ajout du stockage NFS ISO au cluster Proxmox"
 STORAGE_CFG="/etc/pve/storage.cfg"
 STORAGE_NAME="ISO"
 
-# Vérifie si le bloc existe déjà
-if grep -q "^nfs: $STORAGE_NAME" "$STORAGE_CFG"; then
-  echo "Le stockage '$STORAGE_NAME' est déjà présent dans storage.cfg"
-else
-  echo "Ajout du stockage NFS '$STORAGE_NAME' à $STORAGE_CFG"
-
-  cat <<EOF >> "$STORAGE_CFG"
-
-nfs: $STORAGE_NAME
-        export /mnt/ISO
-        path /mnt/pve/ISO
-        server 192.168.67.181
-        content vztmpl,iso
-        prune-backups keep-all=1
-
-lvm: stockage-vm
-        vgname stockage-vm
-        content images,rootdir
-        saferemove 0
-        shared 0
-EOF
-
-  echo "Stockage '$STORAGE_NAME' ajouté avec succès."
-fi
+cp ./storage.cfg /etc/pve/storage.cfg
 
 
 step "Copie du template 100"
