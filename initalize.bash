@@ -38,6 +38,13 @@ for i in $(seq "$start" "$end"); do
   scp -r "$SRC_DIR"/* root@"$host":"$DEST_DIR"
 done
 
+echo 'Acquire::http { Proxy "http://192.168.67.181:3142"; }' > /etc/apt/apt.conf.d/99cache-proxy
+for i in $(seq 2 $end); do
+  ssh pve$i "cat > /etc/apt/apt.conf.d/99cache-proxy <<EOF
+Acquire::http { Proxy \"http://192.168.67.181:3142\"; }
+EOF"
+done
+
 # Mise à jour des nœuds distants en arrière-plan
 for i in $(seq "$start" "$end"); do
   host="pve$i"
@@ -214,4 +221,129 @@ for i in $(seq "$start" "$end"); do
   ssh root@"$host" bash /root/disks.bash
 done
 
+# Ajout du NFS
 
+# Ajout du stockage NFS ISO au cluster Proxmox
+STORAGE_CFG="/etc/pve/storage.cfg"
+STORAGE_NAME="ISO"
+
+# Vérifie si le bloc existe déjà
+if grep -q "^nfs: $STORAGE_NAME" "$STORAGE_CFG"; then
+  echo "Le stockage '$STORAGE_NAME' est déjà présent dans storage.cfg"
+else
+  echo "Ajout du stockage NFS '$STORAGE_NAME' à $STORAGE_CFG"
+
+  cat <<EOF >> "$STORAGE_CFG"
+
+nfs: $STORAGE_NAME
+        export /mnt/ISO
+        path /mnt/pve/ISO
+        server 192.168.67.181
+        content vztmpl,iso
+        prune-backups keep-all=1
+EOF
+
+  echo "Stockage '$STORAGE_NAME' ajouté avec succès."
+fi
+
+
+# Copie du template
+cp ./100.conf /etc/pve/nodes/pve1/qemu-server/100.conf
+
+# Clonage des VM sur pve1
+
+for i in $(seq 1 3); do
+  vmid="2${i}1"
+  name="pve${i}1"
+  qm clone 100 "$vmid" --name "$name" --target pve1
+done
+
+# Clonage des VM sur les autres noeuds
+
+for i in $(seq $start $end); do
+  for j in $(seq 1 3); do
+    vmid="2${j}${i}"
+    name="pve${j}${i}"
+    qm clone 100 "$vmid" --name "$name" --target pve$i
+  done
+done
+
+# Ajout des disques aux VM de pve1
+
+options=",discard=on,ssd=1,iothread=1"
+for i in $(seq 1 3); do
+  scsi=0
+  for val in 50 100 100 150; do
+    vmid="2${i}1"
+    taille="$val"
+    qm set $vmid --scsi$scsi stockage-vm:$taille$options
+    scsi=$((scsi + 1))
+    if [ "$i" -eq 1 ] && [ "$scsi" -eq 3 ]; then
+      for sup in $(seq 4 13); do
+        qm set $vmid --scsi$sup stockage-vm:10$options
+      done
+    fi
+  done
+done
+
+# Ajout des disques aux VM des autres PVE
+for i in $(seq $start $end); do
+  for j in $(seq 1 3); do
+    scsi=0
+    for val in 50 100 100 150; do
+      vmid="2${j}${i}"
+      taille="$val"
+      target_host="pve$i"
+      ssh -o StrictHostKeyChecking=accept-new "$target_host" "qm status $vmid &>/dev/null" || continue
+      echo "Ajout de scsi$scsi à VM $vmid via $target_host"
+      ssh -o StrictHostKeyChecking=accept-new "$target_host" "qm set $vmid --scsi$scsi stockage-vm:$taille$options"
+      if [ "$j" -eq 1 ] && [ "$scsi" -eq 3 ]; then
+        for sup in $(seq 4 13); do
+          ssh -o StrictHostKeyChecking=accept-new "$target_host" "qm status $vmid &>/dev/null" || continue
+          echo "Ajout de scsi$scsi à VM $vmid via $target_host"
+          ssh -o StrictHostKeyChecking=accept-new "$target_host" "qm set $vmid --scsi$sup stockage-vm:10$options"
+        done
+      fi
+    scsi=$((scsi + 1))
+    done
+  done
+done
+
+# Création des réseaux
+
+for i in $(seq 1 3); do
+  vmid="2${i}1"
+  qm set $vmid --net0 bridge=vmbr0,mtu=1500,firewall=1
+  qm set $vmid --net1 bridge=vmbr0,mtu=1500,firewall=1
+  qm set $vmid --net2 bridge=v100,mtu=9000,firewall=1
+  qm set $vmid --net3 bridge=v100,mtu=9000,firewall=1
+  qm set $vmid --net4 bridge=v120,mtu=9000,firewall=1
+done
+
+for i in $(seq $start $end); do
+  target_host="pve$i"
+  for j in $(seq 1 3); do
+    vmid="2${j}${i}"
+    for net in $(seq 0 1); do
+      ssh -o StrictHostKeyChecking=accept-new "$target_host" "qm set $vmid --net$net bridge=vmbr0,mtu=1500,firewall=1"
+    done
+    for net in $(seq 2 3); do
+      ssh -o StrictHostKeyChecking=accept-new "$target_host" "qm set $vmid --net$net bridge=v${i}00,mtu=9000,firewall=1"
+    done
+    net=4
+    case "$i" in
+      1|2 
+        ssh -o StrictHostKeyChecking=accept-new "$target_host" "qm set $vmid --net$net bridge=v120,mtu=9000,firewall=1"
+        ;;
+      3|4 
+        ssh -o StrictHostKeyChecking=accept-new "$target_host" "qm set $vmid --net$net bridge=v340,mtu=9000,firewall=1"
+        ;;
+      5|6 
+        ssh -o StrictHostKeyChecking=accept-new "$target_host" "qm set $vmid --net$net bridge=v560,mtu=9000,firewall=1"
+        ;;
+      7|8 
+        ssh -o StrictHostKeyChecking=accept-new "$target_host" "qm set $vmid --net$net bridge=v780,mtu=9000,firewall=1"
+        ;;
+    esac
+  done
+done
