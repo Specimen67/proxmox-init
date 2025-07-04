@@ -94,7 +94,8 @@ EOF
 done
 
 step "Création des bridge sur les noeuds"
-  bridge_config=$(cat <<EOF
+
+bridge_config=$(cat <<EOF
 auto vmbr1
 iface vmbr1 inet manual
     bridge-ports enp3s0
@@ -104,25 +105,38 @@ iface vmbr1 inet manual
     bridge-vids 2-4094
     mtu 9000
 EOF
-  )
+)
 
 if ! grep -q "^auto vmbr1" /etc/network/interfaces; then
   sed -i '/^iface enp3s0 inet manual/a\        mtu 9000' /etc/network/interfaces
   echo -e "\n$bridge_config" | tee -a /etc/network/interfaces > /dev/null
 fi
+
 ifup vmbr1 || echo "⚠️ Impossible de monter vmbr1 sur pve1"
 
 for i in $(seq "$start" "$end"); do
   host="pve$i"
   echo "Configuration du bridge vmbr1 sur $host"
-  ssh root@"$host" bash -c "'
+
+  ssh root@"$host" "bash -c '
     if ! grep -q \"^auto vmbr1\" /etc/network/interfaces; then
-      sed -i '/^iface enp3s0 inet manual/a\        mtu 9000' /etc/network/interfaces
-      echo -e \"\n$bridge_config\" | tee -a /etc/network/interfaces > /dev/null
+      sed -i \"/^iface enp3s0 inet manual/a\\        mtu 9000\" /etc/network/interfaces
+      cat <<EOF >> /etc/network/interfaces
+
+auto vmbr1
+iface vmbr1 inet manual
+    bridge-ports enp3s0
+    bridge-stp off
+    bridge-fd 0
+    bridge-vlan-aware yes
+    bridge-vids 2-4094
+    mtu 9000
+EOF
     fi
     ifup vmbr1 || echo \"⚠️ Impossible de monter vmbr1 sur $host\"
   '"
 done
+
 
 step "Création de la zone SDN"
 zone_name="VLAN"
