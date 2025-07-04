@@ -227,6 +227,7 @@ nfs: $STORAGE_NAME
         server 192.168.67.181
         content vztmpl,iso
         prune-backups keep-all=1
+
 lvm: stockage-vm
         vgname stockage-vm
         content images,rootdir
