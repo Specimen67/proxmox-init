@@ -1,35 +1,65 @@
 #!/bin/bash
 
-# Création du cluster
-pvecm create Dawan
+# Rediriger la sortie vers un fichier log tout en affichant les grandes lignes
+exec > >(tee -a /var/log/proxmox-lab-setup.log) 2>&1
 
-# Lecture de la plage des nœuds
-read -p "Plage des nœuds à ajouter (par défaut: 1-8) [1-8] : " node_range
-node_range=${node_range:-1-8}
+# Fonction d'affichage des grandes étapes
+declare -i STEP_NUM=1
+step() {
+  echo -e "\n\033[1;34m[$STEP_NUM] 🔷 $1\033[0m"
+  STEP_NUM+=1
+}
 
-if [[ ! "$node_range" =~ ^([0-9]+)-([0-9]+)$ ]]; then
-  echo "Format invalide, utilisez par exemple : 1-8"
+start=2
+end=1
+
+for i in {2..8}; do
+  ip="192.168.67.20$i"
+  if ping -c 1 -W 1 "$ip" > /dev/null 2>&1; then
+    echo "Nœud détecté : $ip"
+    end=$i
+  fi
+
+done
+
+if [[ $end -lt $start ]]; then
+  echo " Aucun nœud détecté dans la plage 202 à 208."
   exit 1
 fi
 
-start=${BASH_REMATCH[1]}
-end=${BASH_REMATCH[2]}
+node_range="$start-$end"
+echo "Plage de nœuds détectée : $node_range"
 
-# Ajout des nœuds au cluster via expect
+step "Création du cluster"
+pvecm create Dawan
+
+#step "Lecture de la plage des nœuds"
+#read -p "Plage des nœuds à ajouter (par défaut: 1-8) [1-8] : " node_range
+#node_range=${node_range:-1-8}
+
+#if [[ ! "$node_range" =~ ^([0-9]+)-([0-9]+)$ ]]; then
+#  echo "Format invalide, utilisez par exemple : 1-8"
+#  exit 1
+#fi
+
+#start=${BASH_REMATCH[1]}
+#end=${BASH_REMATCH[2]}
+
+step "Ajout des nœuds au cluster via expect"
 for i in $(seq "$start" "$end"); do
   ip="192.168.67.2$i"
   echo "Ajout du nœud $ip"
   ./join_node.expect "$ip"
 done
 
-# Modification des fichiers hosts des PVE du cluster
-bash ajout_hosts.bash "$node_range"
+step "Modification des fichiers hosts des PVE du cluster"
+bash ajout_hosts.bash "1-$end"
 
-# Copie des sources.list.d localement et sur les nœuds distants
+#step "Copie des sources.list.d"
 SRC_DIR="./sources.list.d"
 DEST_DIR="/etc/apt/sources.list.d/"
 
-echo "Copie locale du dossier $SRC_DIR vers $DEST_DIR"
+echo "Copie du dossier $SRC_DIR vers $DEST_DIR"
 sudo cp -r "$SRC_DIR"/* "$DEST_DIR"
 
 for i in $(seq "$start" "$end"); do
@@ -39,21 +69,20 @@ for i in $(seq "$start" "$end"); do
 done
 
 echo 'Acquire::http { Proxy "http://192.168.67.181:3142"; }' > /etc/apt/apt.conf.d/99cache-proxy
-for i in $(seq 2 $end); do
+for i in $(seq $start $end); do
   ssh pve$i "cat > /etc/apt/apt.conf.d/99cache-proxy <<EOF
 Acquire::http { Proxy \"http://192.168.67.181:3142\"; }
 EOF"
 done
 
-# Mise à jour des nœuds distants en arrière-plan
+step "Mise à jour des nœuds distants en arrière-plan"
 for i in $(seq "$start" "$end"); do
   host="pve$i"
   echo "Lancement de la mise à jour sur $host en arrière-plan"
   ssh root@"$host" "nohup bash -c 'apt update && apt upgrade -y > /var/log/maj.log 2>&1' >/dev/null 2>&1 &"
 done
 
-# Mise à jour locale (attente)
-echo "Mise à jour locale..."
+step "Mise à jour locale"
 if sudo apt update && sudo apt upgrade -y; then
   echo "Mise à jour terminée avec succès."
 else
@@ -61,43 +90,21 @@ else
   exit 1
 fi
 
-# Suppression de la bannière no-subscription sur tous les nœuds
-local_host=$(hostname)
+step "Suppression de la bannière no-subscription sur tous les nœuds"
+
+sed -i.bak "s/.data.status.toLowerCase() !== 'active') {/.data.status.toLowerCase() !== 'active') { orig_cmd(); } else if ( false ) {/" /u>
+systemctl restart pveproxy.service
 
 for i in $(seq "$start" "$end"); do
   host="pve$i"
   echo "Exécution suppression bannière sur $host..."
-
-  if [[ "$host" == "$local_host" ]]; then
-    # Exécution locale
-    sed -i.bak "s/.data.status.toLowerCase() !== 'active') {/.data.status.toLowerCase() !== 'active') { orig_cmd(); } else if ( false ) {/" /usr/share/javascript/proxmox-widget-toolkit/proxmoxlib.js
-    systemctl restart pveproxy.service
-
-    if [ $? -eq 0 ]; then
-      echo "✔ Commandes exécutées avec succès sur $host"
-    else
-      echo "✘ Erreur lors de l'exécution locale sur $host"
-    fi
-  else
-    # Exécution distante via SSH
-    ssh root@"$host" bash -s <<'EOF'
+  ssh root@"$host" bash -s <<'EOF'
 sed -i.bak "s/.data.status.toLowerCase() !== 'active') {/.data.status.toLowerCase() !== 'active') { orig_cmd(); } else if ( false ) {/" /usr/share/javascript/proxmox-widget-toolkit/proxmoxlib.js
 systemctl restart pveproxy.service
 EOF
-
-    if [ $? -eq 0 ]; then
-      echo "✔ Commandes exécutées avec succès sur $host"
-    else
-      echo "✘ Erreur lors de l'exécution sur $host"
-    fi
-  fi
 done
 
-# Création des bridge sur les noeuds
-for i in $(seq "$start" "$end"); do
-  host="pve$i"
-  echo "Configuration du bridge vmbr1 sur $host"
-
+step "Création des bridge sur les noeuds"
   bridge_config=$(cat <<EOF
 auto vmbr1
 iface vmbr1 inet manual
@@ -110,24 +117,23 @@ iface vmbr1 inet manual
 EOF
   )
 
-  if [[ "$host" == "$local_host" ]]; then
-    # Exécution locale
-    if ! grep -q "^auto vmbr1" /etc/network/interfaces; then
-      echo -e "\n$bridge_config" | sudo tee -a /etc/network/interfaces > /dev/null
+if ! grep -q "^auto vmbr1" /etc/network/interfaces; then
+  echo -e "\n$bridge_config" | sudo tee -a /etc/network/interfaces > /dev/null
+fi
+sudo ifup vmbr1 || echo "⚠️ Impossible de monter vmbr1 sur $host"
+
+for i in $(seq "$start" "$end"); do
+  host="pve$i"
+  echo "Configuration du bridge vmbr1 sur $host"
+  ssh root@"$host" bash -c "'
+    if ! grep -q \"^auto vmbr1\" /etc/network/interfaces; then
+      echo -e \"\n$bridge_config\" | tee -a /etc/network/interfaces > /dev/null
     fi
-    sudo ifup vmbr1 || echo "⚠️ Impossible de monter vmbr1 sur $host"
-  else
-    # Exécution distante via SSH
-    ssh root@"$host" bash -c "'
-      if ! grep -q \"^auto vmbr1\" /etc/network/interfaces; then
-        echo -e \"\n$bridge_config\" | tee -a /etc/network/interfaces > /dev/null
-      fi
-      ifup vmbr1 || echo \"⚠️ Impossible de monter vmbr1 sur $host\"
-    '"
-  fi
+    ifup vmbr1 || echo \"⚠️ Impossible de monter vmbr1 sur $host\"
+  '"
 done
 
-# Création de la zone SDN
+step "Création de la zone SDN"
 zone_name="VLAN"
 bridge_name="vmbr1"
 mtu_val=9000
@@ -141,11 +147,9 @@ vlan: $zone_name
 EOF
 pvesh set /cluster/sdn
 
-# Création des Vnets
+step "Création des Vnets"
 vnets_cfg="/etc/pve/sdn/vnets.cfg"
 interfaces_cfg_local="/etc/network/interfaces.d/sdn"
-
-local_host=$(hostname)
 
 # Vider les fichiers avant écriture
 > "$vnets_cfg"
@@ -176,7 +180,7 @@ iface $vnet_name
 EOF
 }
 
-# Création des vnets dans la plage
+step "Création des vnets dans la plage"
 for i in $(seq "$start" "$end"); do
   vnet_name="v${i}00"
   tag="${i}00"
@@ -204,26 +208,19 @@ done
 echo "Configuration des vnets terminée."
 
 
-# creation du vg stockage-vm
-# Exécution locale (supposons local_host = pve1)
-echo "Exécution locale sur $local_host"
+step "creation du vg stockage-vm"
 bash ./disks.bash
 
 # Exécution distante sur les autres nœuds
 for i in $(seq "$start" "$end"); do
   host="pve$i"
-  if [[ "$host" == "$local_host" ]]; then
-    echo "Skipping local host $host (already done)"
-    continue
-  fi
   echo "Exécution sur $host via SSH"
   scp ./disks.bash root@"$host":/root/
   ssh root@"$host" bash /root/disks.bash
 done
 
-# Ajout du NFS
 
-# Ajout du stockage NFS ISO au cluster Proxmox
+step "Ajout du stockage NFS ISO au cluster Proxmox"
 STORAGE_CFG="/etc/pve/storage.cfg"
 STORAGE_NAME="ISO"
 
@@ -247,10 +244,11 @@ EOF
 fi
 
 
-# Copie du template
+step "Copie du template 100"
 cp ./100.conf /etc/pve/nodes/pve1/qemu-server/100.conf
 
-# Clonage des VM sur pve1
+step "Clonage des VM"
+echo "Clonage des VM sur pve1"
 
 for i in $(seq 1 3); do
   vmid="2${i}1"
@@ -261,6 +259,7 @@ done
 # Clonage des VM sur les autres noeuds
 
 for i in $(seq $start $end); do
+  echo "Clonage des VM sur pve$i"
   for j in $(seq 1 3); do
     vmid="2${j}${i}"
     name="pve${j}${i}"
@@ -268,6 +267,7 @@ for i in $(seq $start $end); do
   done
 done
 
+step "Ajout des disques de VM"
 # Ajout des disques aux VM de pve1
 
 options=",discard=on,ssd=1,iothread=1"
@@ -309,7 +309,7 @@ for i in $(seq $start $end); do
   done
 done
 
-# Création des réseaux
+step "ajout des réseaux aux VM"
 
 for i in $(seq 1 3); do
   vmid="2${i}1"
