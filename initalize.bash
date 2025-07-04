@@ -311,11 +311,11 @@ step "ajout des réseaux aux VM"
 
 for i in $(seq 1 3); do
   vmid="2${i}1"
-  qm set $vmid --net0 bridge=vmbr0,mtu=1500,firewall=1
-  qm set $vmid --net1 bridge=vmbr0,mtu=1500,firewall=1
-  qm set $vmid --net2 bridge=v100,mtu=9000,firewall=1
-  qm set $vmid --net3 bridge=v100,mtu=9000,firewall=1
-  qm set $vmid --net4 bridge=v120,mtu=9000,firewall=1
+  qm set $vmid --net0 virtio,bridge=vmbr0,mtu=1500,firewall=1
+  qm set $vmid --net1 virtio,bridge=vmbr0,mtu=1500,firewall=1
+  qm set $vmid --net2 virtio,bridge=v100,mtu=9000,firewall=1
+  qm set $vmid --net3 virtio,bridge=v100,mtu=9000,firewall=1
+  qm set $vmid --net4 virtio,bridge=v120,mtu=9000,firewall=1
 done
 
 for i in $(seq $start $end); do
@@ -323,24 +323,24 @@ for i in $(seq $start $end); do
   for j in $(seq 1 3); do
     vmid="2${j}${i}"
     for net in $(seq 0 1); do
-      ssh -o StrictHostKeyChecking=accept-new "$target_host" "qm set $vmid --net$net bridge=vmbr0,mtu=1500,firewall=1"
+      ssh -o StrictHostKeyChecking=accept-new "$target_host" "qm set $vmid --net$net virtio,bridge=vmbr0,mtu=1500,firewall=1"
     done
     for net in $(seq 2 3); do
-      ssh -o StrictHostKeyChecking=accept-new "$target_host" "qm set $vmid --net$net bridge=v${i}00,mtu=9000,firewall=1"
+      ssh -o StrictHostKeyChecking=accept-new "$target_host" "qm set $vmid --net$net virtio,bridge=v${i}00,mtu=9000,firewall=1"
     done
     net=4
     case "$i" in
       1|2 
-        ssh -o StrictHostKeyChecking=accept-new "$target_host" "qm set $vmid --net$net bridge=v120,mtu=9000,firewall=1"
+        ssh -o StrictHostKeyChecking=accept-new "$target_host" "qm set $vmid --net$net virtio,bridge=v120,mtu=9000,firewall=1"
         ;;
       3|4 
-        ssh -o StrictHostKeyChecking=accept-new "$target_host" "qm set $vmid --net$net bridge=v340,mtu=9000,firewall=1"
+        ssh -o StrictHostKeyChecking=accept-new "$target_host" "qm set $vmid --net$net virtio,bridge=v340,mtu=9000,firewall=1"
         ;;
       5|6 
-        ssh -o StrictHostKeyChecking=accept-new "$target_host" "qm set $vmid --net$net bridge=v560,mtu=9000,firewall=1"
+        ssh -o StrictHostKeyChecking=accept-new "$target_host" "qm set $vmid --net$net virtio,bridge=v560,mtu=9000,firewall=1"
         ;;
       7|8 
-        ssh -o StrictHostKeyChecking=accept-new "$target_host" "qm set $vmid --net$net bridge=v780,mtu=9000,firewall=1"
+        ssh -o StrictHostKeyChecking=accept-new "$target_host" "qm set $vmid --net$net virtio,bridge=v780,mtu=9000,firewall=1"
         ;;
     esac
   done
