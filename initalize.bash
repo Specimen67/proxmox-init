@@ -38,7 +38,7 @@ step "Ajout des nœuds au cluster via expect"
 for i in $(seq "$start" "$end"); do
   ip="192.168.67.2$i"
   echo "Ajout du nœud $ip"
-  ./join_node.expect "$ip"
+  ./join_nodes.expect "$ip"
 done
 
 step "Modification des fichiers hosts des PVE du cluster"
@@ -49,7 +49,7 @@ SRC_DIR="./sources.list.d"
 DEST_DIR="/etc/apt/sources.list.d/"
 
 echo "Copie du dossier $SRC_DIR vers $DEST_DIR"
-sudo cp -r "$SRC_DIR"/* "$DEST_DIR"
+cp -r "$SRC_DIR"/* "$DEST_DIR"
 
 for i in $(seq "$start" "$end"); do
   host="pve$i"
@@ -72,7 +72,7 @@ for i in $(seq "$start" "$end"); do
 done
 
 step "Mise à jour locale"
-if sudo apt update && sudo apt upgrade -y; then
+if apt update && apt upgrade -y; then
   echo "Mise à jour terminée avec succès."
 else
   echo "Erreur lors de la mise à jour locale."
