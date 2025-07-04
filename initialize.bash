@@ -328,16 +328,16 @@ for i in $(seq $start $end); do
     done
     net=4
     case "$i" in
-      1|2 
+      1|2) 
         ssh -o StrictHostKeyChecking=accept-new "$target_host" "qm set $vmid --net$net virtio,bridge=v120,mtu=9000,firewall=1"
         ;;
-      3|4 
+      3|4) 
         ssh -o StrictHostKeyChecking=accept-new "$target_host" "qm set $vmid --net$net virtio,bridge=v340,mtu=9000,firewall=1"
         ;;
-      5|6 
+      5|6) 
         ssh -o StrictHostKeyChecking=accept-new "$target_host" "qm set $vmid --net$net virtio,bridge=v560,mtu=9000,firewall=1"
         ;;
-      7|8 
+      7|8) 
         ssh -o StrictHostKeyChecking=accept-new "$target_host" "qm set $vmid --net$net virtio,bridge=v780,mtu=9000,firewall=1"
         ;;
     esac
