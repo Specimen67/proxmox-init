@@ -198,14 +198,14 @@ echo "Configuration des vnets terminée."
 
 
 step "creation du vg stockage-vm"
-bash ./disks.bash
+bash ./disk.bash
 
 # Exécution distante sur les autres nœuds
 for i in $(seq "$start" "$end"); do
   host="pve$i"
   echo "Exécution sur $host via SSH"
-  scp ./disks.bash root@"$host":/root/
-  ssh root@"$host" bash /root/disks.bash
+  scp ./disk.bash root@"$host":/root/
+  ssh root@"$host" bash /root/disk.bash
 done
 
 
