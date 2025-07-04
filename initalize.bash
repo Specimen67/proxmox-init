@@ -211,6 +211,8 @@ for i in $(seq "$start" "$end"); do
   fi
 done
 
+pvesh set /cluster/sdn
+sleep 15
 echo "Configuration des vnets terminée."
 
 
