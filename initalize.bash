@@ -30,10 +30,16 @@ fi
 node_range="$start-$end"
 echo "Plage de nœuds détectée : $node_range"
 
+SRC_DIR="./sources.list.d"
+DEST_DIR="/etc/apt/sources.list.d/"
+
+echo "Copie du dossier $SRC_DIR vers $DEST_DIR"
+cp -r "$SRC_DIR"/* "$DEST_DIR"
+
 step "Création du cluster"
 pvecm create Dawan
 
-
+apt update && apt install sshpass
 step "Ajout des nœuds au cluster"
 for i in $(seq "$start" "$end"); do
   ip="192.168.67.20$i"
@@ -45,11 +51,7 @@ step "Modification des fichiers hosts des PVE du cluster"
 bash ajout_hosts.bash "1-$end"
 
 #step "Copie des sources.list.d"
-SRC_DIR="./sources.list.d"
-DEST_DIR="/etc/apt/sources.list.d/"
 
-echo "Copie du dossier $SRC_DIR vers $DEST_DIR"
-cp -r "$SRC_DIR"/* "$DEST_DIR"
 
 for i in $(seq "$start" "$end"); do
   host="pve$i"
