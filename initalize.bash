@@ -13,7 +13,7 @@ step() {
 start=2
 end=1
 
-for i in {2..8}; do
+for i in {2..3}; do
   ip="192.168.67.20$i"
   if ping -c 1 -W 1 "$ip" > /dev/null 2>&1; then
     echo "Nœud détecté : $ip"
@@ -33,17 +33,6 @@ echo "Plage de nœuds détectée : $node_range"
 step "Création du cluster"
 pvecm create Dawan
 
-#step "Lecture de la plage des nœuds"
-#read -p "Plage des nœuds à ajouter (par défaut: 1-8) [1-8] : " node_range
-#node_range=${node_range:-1-8}
-
-#if [[ ! "$node_range" =~ ^([0-9]+)-([0-9]+)$ ]]; then
-#  echo "Format invalide, utilisez par exemple : 1-8"
-#  exit 1
-#fi
-
-#start=${BASH_REMATCH[1]}
-#end=${BASH_REMATCH[2]}
 
 step "Ajout des nœuds au cluster via expect"
 for i in $(seq "$start" "$end"); do
