@@ -38,7 +38,7 @@ step "Ajout des nœuds au cluster via expect"
 for i in $(seq "$start" "$end"); do
   ip="192.168.67.20$i"
   echo "Ajout du nœud $ip"
-  ./join_nodes.expect "$ip"
+  bash join_nodes.expect "$ip"
 done
 
 step "Modification des fichiers hosts des PVE du cluster"
