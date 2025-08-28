@@ -1,0 +1,18 @@
+127.0.0.1 localhost.localdomain localhost
+192.168.67.201 pve1.strasbourg.dawan.fr pve1
+192.168.67.202 pve2.strasbourg.dawan.fr pve2
+192.168.67.203 pve3.strasbourg.dawan.fr pve3
+192.168.67.204 pve4.strasbourg.dawan.fr pve4
+192.168.67.205 pve5.strasbourg.dawan.fr pve5
+192.168.67.206 pve6.strasbourg.dawan.fr pve6
+192.168.67.207 pve7.strasbourg.dawan.fr pve7
+192.168.67.208 pve8.strasbourg.dawan.fr pve8
+
+# The following lines are desirable for IPv6 capable hosts
+
+::1     ip6-localhost ip6-loopback
+fe00::0 ip6-localnet
+ff00::0 ip6-mcastprefix
+ff02::1 ip6-allnodes
+ff02::2 ip6-allrouters
+ff02::3 ip6-allhosts
