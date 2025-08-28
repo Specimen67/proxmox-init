@@ -1,44 +1,5 @@
 #!/bin/bash
 
-# Rediriger la sortie vers un fichier log tout en affichant les grandes lignes
-exec > >(tee -a /var/log/proxmox-lab-setup.log) 2>&1
-
-# Fonction d'affichage des grandes étapes
-declare -i STEP_NUM=1
-step() {
-  echo -e "\n\033[1;34m[$STEP_NUM] 🔷 $1\033[0m"
-  STEP_NUM+=1
-}
-
-start=2
-end=1
-
-for i in {2..8}; do
-  ip="192.168.67.20$i"
-  if ping -c 1 -W 1 "$ip" > /dev/null 2>&1; then
-    echo "Nœud détecté : $ip"
-    end=$i
-  fi
-
-done
-
-if [[ $end -lt $start ]]; then
-  echo " Aucun nœud détecté dans la plage 202 à 208."
-  exit 1
-fi
-
-node_range="$start-$end"
-echo "Plage de nœuds détectée : $node_range"
-
-step "Copie des sources.list.d"
-
-SRC_DIR="./sources.list.d"
-DEST_DIR="/etc/apt/sources.list.d/"
-
-echo "Copie du dossier $SRC_DIR vers $DEST_DIR"
-cp -r "$SRC_DIR"/* "$DEST_DIR"
-
-
 apt update && apt install sshpass
 for i in $(seq "$start" "$end"); do
   host="192.168.67.20$i"
